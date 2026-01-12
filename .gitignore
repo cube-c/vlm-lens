@@ -198,3 +198,6 @@ notebooks/debug.ipynb
 
 # Debug files
 **/debug.yaml
+
+# Dataset
+RoboSpatial_data/
