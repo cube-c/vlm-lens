@@ -133,6 +133,12 @@ class Config:
             choices=['mean', 'max'],
             help='The type of pooling to use for the output embeddings'
         )
+        parser.add_argument(
+            '--sample',
+            type=int,
+            default=None,
+            help='Limit the number of samples to process (unlimited if not specified)'
+        )
 
         # only parse the args that we know, and throw out what we don't know
         args = parser.parse_known_args()[0]

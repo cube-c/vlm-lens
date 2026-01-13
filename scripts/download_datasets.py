@@ -10,9 +10,8 @@ import wget
 import yaml
 
 # go up one level: scripts -> root
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.append(str(ROOT))
-from project_root import PROJECT_ROOT  # noqa: E402
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1] 
+sys.path.append(str(PROJECT_ROOT))
 
 
 def process_path(path: str, to_str: bool = False) -> pathlib.Path | str:

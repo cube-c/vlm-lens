@@ -352,9 +352,15 @@ class ModelBase(ABC):
         """
         # by default use the processor, which may not exist for each model
         logging.debug('Generating embeddings through its processor...')
+        sample_limit = getattr(self.config, 'sample', None)
+        count = 0
+
         if self.config.dataset:
             # Use the dataset to load input data, which includes (id, prompt, image_path)
             for row in self.config.dataset:
+                if sample_limit is not None and count >= sample_limit:
+                    break
+
                 prompt = self._generate_prompt(row['prompt'])
                 data = self._generate_processor_output(
                     prompt=prompt,
@@ -368,6 +374,7 @@ class ModelBase(ABC):
                     'data': data,
                     'row_id': row['id'],
                 }
+                count += 1
 
         else:
             if not self.config.has_images():
@@ -382,6 +389,9 @@ class ModelBase(ABC):
             else:
                 prompt = self._generate_prompt(self.config.prompt)
                 for img_path in self.config.image_paths:
+                    if sample_limit is not None and count >= sample_limit:
+                        break
+
                     data = self._generate_processor_output(
                         prompt=prompt,
                         img_path=img_path
@@ -391,6 +401,7 @@ class ModelBase(ABC):
                         'prompt': self.config.prompt,
                         'data': data
                     }
+                    count += 1
 
     @property
     def _data_size(self) -> int:
@@ -399,13 +410,20 @@ class ModelBase(ABC):
         Returns:
             int: The total number of data points.
         """
+        sample_limit = getattr(self.config, 'sample', None)
+
         if self.config.dataset:
-            return len(self.config.dataset)
+            total_size = len(self.config.dataset)
         else:
             if not self.config.has_images():
-                return 1
+                total_size = 1
             else:
-                return len(self.config.image_paths)
+                total_size = len(self.config.image_paths)
+
+        # Return the minimum of sample_limit and total_size if sample_limit is set
+        if sample_limit is not None:
+            return min(sample_limit, total_size)
+        return total_size
 
     def run(self) -> None:
         """Get the hidden states from the model and saving them."""
