@@ -3,6 +3,7 @@
 File for providing the Molmo model implementation.
 """
 import logging
+import os
 
 import torch
 from PIL import Image
@@ -26,14 +27,50 @@ class MolmoModel(ModelBase):
 
     def _load_specific_model(self) -> None:
         """Overridden function to populate self.model."""
+        # Get model config and extract checkpoint path if present
+        model_config = getattr(self.config, 'model', {})
+        checkpoint_path = model_config.get('checkpoint', None)
+
+        # Filter out checkpoint from kwargs passed to from_pretrained
+        model_kwargs = {k: v for k, v in model_config.items() if k != 'checkpoint'}
+
+        # Load base model from HuggingFace
         self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_path, **getattr(self.config, 'model', {}), trust_remote_code=True
+            self.model_path, **model_kwargs, trust_remote_code=True
         )
+
+        # Load custom checkpoint if provided
+        if checkpoint_path:
+            logging.info(f"Loading checkpoint from {checkpoint_path}...")
+            checkpoint_file = os.path.join(checkpoint_path, "model.pt")
+
+            if not os.path.exists(checkpoint_file):
+                raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_file}")
+
+            # Load checkpoint state dict
+            checkpoint_state_dict = torch.load(checkpoint_file, map_location='cpu')
+
+            # Add "model." prefix to all keys to match HuggingFace format
+            prefixed_state_dict = {f"model.{k}": v for k, v in checkpoint_state_dict.items()}
+
+            # Load state dict into model
+            missing_keys, unexpected_keys = self.model.load_state_dict(prefixed_state_dict, strict=False)
+
+            if missing_keys:
+                logging.warning(f"Missing keys in checkpoint: {missing_keys}")
+            if unexpected_keys:
+                logging.warning(f"Unexpected keys in checkpoint: {unexpected_keys}")
+
+            logging.info("Custom checkpoint loaded successfully!")
 
     def _init_processor(self) -> None:
         """Initializes the processor."""
+        # Filter out checkpoint parameter if present
+        model_config = getattr(self.config, 'model', {})
+        processor_kwargs = {k: v for k, v in model_config.items() if k != 'checkpoint'}
+
         self.processor = AutoProcessor.from_pretrained(
-            self.config.model_path, **getattr(self.config, 'model', {}), trust_remote_code=True
+            self.config.model_path, **processor_kwargs, trust_remote_code=True
         )
 
     def _generate_prompt(self, prompt: str, add_generation_prompt: bool = True, has_images: bool = False) -> str:
