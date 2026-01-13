@@ -118,8 +118,7 @@ class Config:
             '--device',
             type=str,
             default='cuda',
-            choices=['cuda', 'cpu'],
-            help='Specify the device to send tensors and the model to'
+            help='Specify the device to send tensors and the model to (e.g., cuda, cpu, cuda:0, cuda:1)'
         )
         parser.add_argument(
             '--download-path',
@@ -138,6 +137,30 @@ class Config:
             type=int,
             default=None,
             help='Limit the number of samples to process (unlimited if not specified)'
+        )
+        parser.add_argument(
+            '--gpus',
+            type=str,
+            default=None,
+            help='Comma-separated list of GPU IDs for multi-GPU processing (e.g., "0,1,2,3")'
+        )
+        parser.add_argument(
+            '--start-idx',
+            type=int,
+            default=None,
+            help='(Internal) Starting index for dataset slice in multi-GPU mode'
+        )
+        parser.add_argument(
+            '--end-idx',
+            type=int,
+            default=None,
+            help='(Internal) Ending index for dataset slice in multi-GPU mode'
+        )
+        parser.add_argument(
+            '--gpu-id',
+            type=int,
+            default=None,
+            help='(Internal) GPU ID assigned to this worker process'
         )
 
         # only parse the args that we know, and throw out what we don't know
@@ -293,10 +316,30 @@ class Config:
 
         # now sets the specific device, first does a check to make sure that if
         # the user wants to use cuda that it is available
-        if 'cuda' in self.device and not torch.cuda.is_available():
-            raise ValueError('Device set to cuda but no GPU found for this machine')
-
-        self.device = torch.device(self.device)
+        if self.device.startswith('cuda:'):
+            # Specific GPU ID specified (e.g., cuda:0, cuda:1)
+            if not torch.cuda.is_available():
+                raise ValueError(f'Device set to {self.device} but no GPU found for this machine')
+            try:
+                gpu_id = int(self.device.split(':')[1])
+                if gpu_id >= torch.cuda.device_count():
+                    raise ValueError(
+                        f'GPU {gpu_id} not available. Found {torch.cuda.device_count()} GPUs (0-{torch.cuda.device_count()-1})'
+                    )
+            except (IndexError, ValueError) as e:
+                raise ValueError(f'Invalid device format: {self.device}. Expected format: cuda:X where X is GPU ID') from e
+            self.device = torch.device(self.device)
+        elif self.device == 'cuda':
+            # Generic cuda device (uses default GPU)
+            if not torch.cuda.is_available():
+                raise ValueError('Device set to cuda but no GPU found for this machine')
+            self.device = torch.device(self.device)
+        elif self.device == 'cpu':
+            self.device = torch.device(self.device)
+        else:
+            raise ValueError(
+                f'Invalid device: {self.device}. Must be one of: cuda, cpu, cuda:0, cuda:1, etc.'
+            )
         self.DB_TABLE_NAME = 'tensors'
         self.NO_IMG_PROMPT = 'No image prompt'
 

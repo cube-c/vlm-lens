@@ -72,12 +72,21 @@ def get_model(
 
 
 if __name__ == '__main__':
-    logging.getLogger().setLevel(logging.INFO)
-    config = Config()
-    logging.debug(
-        f'Config is set to '
-        f'{[(key, value) for key, value in config.__dict__.items()]}'
-    )
+    import sys
 
-    model = get_model(config.architecture, config)
-    model.run()
+    # Check if multi-GPU mode is requested
+    if '--gpus' in sys.argv:
+        # Redirect to multi-GPU runner
+        from src.multi_gpu_runner import main as multi_gpu_main
+        multi_gpu_main()
+    else:
+        # Normal single-GPU execution
+        logging.getLogger().setLevel(logging.INFO)
+        config = Config()
+        logging.debug(
+            f'Config is set to '
+            f'{[(key, value) for key, value in config.__dict__.items()]}'
+        )
+
+        model = get_model(config.architecture, config)
+        model.run()

@@ -43,12 +43,13 @@ def grounding_enc_processor(x: torch.Tensor) -> torch.Tensor:
     return x
 
 
-def prepare_model_for_inference(model: GLaMMForCausalLM, args: dict) -> GLaMMForCausalLM:
+def prepare_model_for_inference(model: GLaMMForCausalLM, args: dict, device=None) -> GLaMMForCausalLM:
     """Initialize vision tower.
 
     Args:
         model (GLaMMForCausalLM): The model to prepare.
         args (dict): The arguments containing configuration options.
+        device: Device to place the model on (defaults to args['local_rank'] if not provided).
 
     Returns:
         GLaMMForCausalLM: The prepared model.
@@ -60,8 +61,10 @@ def prepare_model_for_inference(model: GLaMMForCausalLM, args: dict) -> GLaMMFor
     )
     model.get_model().initialize_vision_modules(model.get_model().config)
     vision_tower = model.get_model().get_vision_tower()
-    vision_tower.to(dtype=torch.bfloat16, device=args['local_rank'])
-    model = model.bfloat16().cuda()
+    # Use provided device, or fallback to args['local_rank'] for backward compatibility
+    target_device = device if device is not None else args.get('local_rank', 0)
+    vision_tower.to(dtype=torch.bfloat16, device=target_device)
+    model = model.bfloat16().to(target_device)
     return model
 
 
@@ -104,7 +107,7 @@ class GlammModel(ModelBase):
             low_cpu_mem_usage=True,
             **model_args
         )
-        self.model = prepare_model_for_inference(self.model, self.config.model)
+        self.model = prepare_model_for_inference(self.model, self.config.model, device=self.config.device)
 
     def _init_processor(self) -> None:
         """Set the self.processor to follow the example given.
@@ -158,16 +161,16 @@ class GlammModel(ModelBase):
 
         # Global encoder
         global_enc_image = self.processor['global_enc_processor'].preprocess(
-            image_np, return_tensors='pt')['pixel_values'][0].unsqueeze(0).cuda().bfloat16()
+            image_np, return_tensors='pt')['pixel_values'][0].unsqueeze(0).to(self.config.device).bfloat16()
 
         # Grounding encoder
         grounding_input = self.processor['grounding_transform'].apply_image(image_np)
         resize_list = [grounding_input.shape[:2]]
         grounding_enc_image = grounding_enc_processor(
             torch.from_numpy(grounding_input).permute(2, 0, 1).contiguous()
-        ).unsqueeze(0).cuda().bfloat16()
+        ).unsqueeze(0).to(self.config.device).bfloat16()
 
-        input_ids = tokenizer_image_token(prompt, self.tokenizer, return_tensors='pt').unsqueeze(0).cuda()
+        input_ids = tokenizer_image_token(prompt, self.tokenizer, return_tensors='pt').unsqueeze(0).to(self.config.device)
 
         return {
             'input_ids': input_ids,

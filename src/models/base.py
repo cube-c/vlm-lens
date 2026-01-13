@@ -353,11 +353,24 @@ class ModelBase(ABC):
         # by default use the processor, which may not exist for each model
         logging.debug('Generating embeddings through its processor...')
         sample_limit = getattr(self.config, 'sample', None)
+        start_idx = getattr(self.config, 'start_idx', None)
+        end_idx = getattr(self.config, 'end_idx', None)
         count = 0
+        global_idx = 0  # Track position in full dataset
 
         if self.config.dataset:
             # Use the dataset to load input data, which includes (id, prompt, image_path)
             for row in self.config.dataset:
+                # Skip until we reach start_idx
+                if start_idx is not None and global_idx < start_idx:
+                    global_idx += 1
+                    continue
+
+                # Stop if we've reached end_idx
+                if end_idx is not None and global_idx >= end_idx:
+                    break
+
+                # Apply sample limit
                 if sample_limit is not None and count >= sample_limit:
                     break
 
@@ -374,6 +387,7 @@ class ModelBase(ABC):
                     'data': data,
                     'row_id': row['id'],
                 }
+                global_idx += 1
                 count += 1
 
         else:
@@ -387,8 +401,16 @@ class ModelBase(ABC):
                     )
                 }
             else:
+                # For image_paths: slice list directly if indices are specified
+                relevant_paths = self.config.image_paths
+                if start_idx is not None or end_idx is not None:
+                    s = start_idx if start_idx is not None else 0
+                    e = end_idx if end_idx is not None else len(relevant_paths)
+                    relevant_paths = relevant_paths[s:e]
+
                 prompt = self._generate_prompt(self.config.prompt)
-                for img_path in self.config.image_paths:
+                for img_path in relevant_paths:
+                    # Apply sample limit
                     if sample_limit is not None and count >= sample_limit:
                         break
 
