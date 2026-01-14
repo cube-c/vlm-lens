@@ -13,10 +13,13 @@ import random
 import sqlite3
 from typing import Any, Dict, Optional
 
+import joblib
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import KFold, train_test_split
 from statsmodels.stats.proportion import proportions_ztest
 from torch.utils.data import DataLoader, Dataset, Subset, TensorDataset
@@ -117,7 +120,11 @@ class ProbeConfig:
             'learning_rate': 1e-3,
             'loss': 'CrossEntropyLoss',
             'num_epochs': 10,
-            'batch_size': 32
+            'batch_size': 32,
+            # sklearn-specific defaults (used when num_layers < 2)
+            'sklearn_C': 1.0,           # Inverse of regularization strength
+            'sklearn_solver': 'lbfgs',  # Options: 'lbfgs', 'sag', 'saga', 'newton-cg'
+            'sklearn_max_iter': 1000,   # Maximum iterations for sklearn solver
         }.items() if k not in train_mapping})
 
         self.training = train_mapping
@@ -151,6 +158,8 @@ class Probe(nn.Module):
         """
         super(Probe, self).__init__()
         self.config = config
+        self.use_sklearn = False  # Will be set in build_model()
+        self.sklearn_model = None  # Will hold sklearn model if applicable
 
         # Load input data to parse model input_size and output_size
         self.data = self.load_data()
@@ -160,15 +169,20 @@ class Probe(nn.Module):
 
     def build_model(self) -> None:
         """Builds the probe model from scratch."""
-        # Intialize probe model
-        layers = list()
-        if self.config.model['num_layers'] < 2:
-            layers.append(
-                nn.Linear(self.config.model['input_size'],
-                        self.config.model['output_size'])
-            )
+        num_layers = self.config.model['num_layers']
 
+        if num_layers < 2:
+            # Use sklearn LogisticRegression for single-layer linear probe
+            self.use_sklearn = True
+            self.sklearn_model = None  # Will be initialized during train()
+            self.model = None  # No torch model needed
+            logging.debug('Using sklearn LogisticRegression (num_layers < 2)')
         else:
+            # Use torch model for multi-layer probe
+            self.use_sklearn = False
+            self.sklearn_model = None
+
+            layers = list()
             layers.append(
                 nn.Linear(self.config.model['input_size'],
                         self.config.model['hidden_size'])
@@ -176,7 +190,7 @@ class Probe(nn.Module):
             layers.append(getattr(nn, self.config.model['activation'])())
 
             # Intialize intermediate layers based on config
-            for _ in range(self.config.model['num_layers'] - 2):
+            for _ in range(num_layers - 2):
                 layers.append(
                     nn.Linear(self.config.model['hidden_size'],
                             self.config.model['hidden_size'])
@@ -189,8 +203,8 @@ class Probe(nn.Module):
                         self.config.model['output_size'])
             )
 
-        # Combine all layers to construct the model
-        self.model = nn.Sequential(*layers)
+            # Combine all layers to construct the model
+            self.model = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the probe model.
@@ -201,8 +215,43 @@ class Probe(nn.Module):
         Returns:
             torch.Tensor: Output tensor.
         """
+        if self.use_sklearn:
+            # Convert to numpy, predict, convert back
+            if self.sklearn_model is None:
+                raise RuntimeError("sklearn model not trained yet")
+            x_np = x.cpu().numpy()
+            probs = self.sklearn_model.predict_proba(x_np)
+            return torch.tensor(probs, device=x.device, dtype=x.dtype)
+
         logging.debug('Forward pass with input: %s', x.shape)
         return self.model(x)
+
+    def _dataset_to_numpy(self, dataset: Dataset) -> tuple:
+        """Convert a torch Dataset to numpy arrays for sklearn.
+
+        Args:
+            dataset: A torch Dataset (TensorDataset or Subset).
+
+        Returns:
+            Tuple of (X_numpy, Y_numpy) arrays.
+        """
+        if isinstance(dataset, Subset):
+            # Handle Subset by extracting underlying data
+            indices = dataset.indices
+            base_dataset = dataset.dataset
+            X_list, Y_list = [], []
+            for idx in indices:
+                x, y = base_dataset[idx]
+                X_list.append(x.cpu().numpy())
+                Y_list.append(y.cpu().numpy() if hasattr(y, 'cpu') else y)
+            X = np.stack(X_list)
+            Y = np.array(Y_list)
+        else:
+            # Handle TensorDataset directly
+            X = dataset.tensors[0].cpu().numpy()
+            Y = dataset.tensors[1].cpu().numpy()
+
+        return X, Y
 
     def load_data(self, shuffle: bool = False) -> TensorDataset:
         """Load tensors from the database.
@@ -317,6 +366,68 @@ class Probe(nn.Module):
         Returns:
             dict: The training results, including validation loss and accuracy.
         """
+        if self.use_sklearn:
+            return self._train_sklearn(train_config, train_set, val_set)
+        else:
+            return self._train_torch(train_config, train_set, val_set)
+
+    def _train_sklearn(self, train_config: dict, train_set: Dataset,
+                       val_set: Optional[Dataset] = None) -> dict:
+        """Train using sklearn LogisticRegression."""
+        logging.debug(f'Training sklearn LogisticRegression with config {train_config}...')
+
+        # Convert data to numpy
+        X_train, Y_train = self._dataset_to_numpy(train_set)
+
+        # Get sklearn hyperparameters with defaults
+        C = train_config.get('sklearn_C', 1.0)
+        solver = train_config.get('sklearn_solver', 'lbfgs')
+        max_iter = train_config.get('sklearn_max_iter', 1000)
+
+        # Initialize and fit LogisticRegression
+        # multi_class='multinomial' for softmax (equivalent to CrossEntropyLoss)
+        self.sklearn_model = LogisticRegression(
+            C=C,
+            solver=solver,
+            max_iter=max_iter,
+            multi_class='multinomial',  # Use softmax for multiclass
+            random_state=42,
+            n_jobs=-1  # Use all CPU cores
+        )
+
+        self.sklearn_model.fit(X_train, Y_train)
+        logging.debug(f'sklearn model fitted with {self.sklearn_model.n_iter_} iterations')
+
+        if val_set:
+            X_val, Y_val = self._dataset_to_numpy(val_set)
+
+            # Get predictions and probabilities
+            preds = self.sklearn_model.predict(X_val)
+            probs = self.sklearn_model.predict_proba(X_val)
+
+            # Calculate cross-entropy loss (sklearn doesn't compute this directly)
+            # CrossEntropyLoss = -sum(log(p[true_class])) / n
+            val_loss = -np.mean(np.log(probs[np.arange(len(Y_val)), Y_val] + 1e-10))
+            val_acc = np.mean(preds == Y_val)
+
+            logging.debug(f'Validation accuracy: {val_acc}, Validation mean loss: {val_loss}')
+
+            # Convert to torch tensors for compatibility with existing return format
+            preds_tensor = torch.tensor(probs)  # Return probabilities like torch model
+            labels_tensor = torch.tensor(Y_val)
+
+            return {
+                'preds': preds_tensor,
+                'labels': labels_tensor,
+                'val_loss': val_loss,
+                'val_acc': val_acc
+            }
+
+        return {}
+
+    def _train_torch(self, train_config: dict, train_set: Dataset,
+                     val_set: Optional[Dataset] = None) -> dict:
+        """Train using PyTorch (original implementation)."""
         logging.debug(
             f'Training the probe model with config {train_config}...')
 
@@ -391,6 +502,33 @@ class Probe(nn.Module):
         Returns:
             dict: The evaluation results, including loss and accuracy.
         """
+        if self.use_sklearn:
+            return self._evaluate_sklearn(test_set)
+        else:
+            return self._evaluate_torch(test_set)
+
+    def _evaluate_sklearn(self, test_set: Dataset) -> dict:
+        """Evaluate using sklearn model."""
+        X_test, Y_test = self._dataset_to_numpy(test_set)
+
+        preds = self.sklearn_model.predict(X_test)
+        probs = self.sklearn_model.predict_proba(X_test)
+
+        # Calculate cross-entropy loss
+        mean_loss = -np.mean(np.log(probs[np.arange(len(Y_test)), Y_test] + 1e-10))
+        accuracy = np.mean(preds == Y_test)
+
+        logging.debug(f'Test accuracy: {accuracy}, Test mean loss: {mean_loss}')
+
+        return {
+            'accuracy': float(accuracy),
+            'loss': float(mean_loss),
+            'labels': Y_test,  # Already numpy
+            'preds': preds     # Already numpy
+        }
+
+    def _evaluate_torch(self, test_set: Dataset) -> dict:
+        """Evaluate using torch model (original implementation)."""
         self.model.eval()
 
         device = torch.device(self.config.device)
@@ -438,14 +576,24 @@ class Probe(nn.Module):
         save_dir = self.config.model.get('save_dir') or 'probe_output'
         os.makedirs(save_dir, exist_ok=True)
 
-        save_path = os.path.join(save_dir, 'probe.pth')
-        try:
-            torch.save(self.model.state_dict(), save_path)
-            logging.debug(f'Model saved to {save_path}')
-        except Exception as e:
-            logging.error(f'Failed to save probe model: {e}')
+        if self.use_sklearn:
+            save_path = os.path.join(save_dir, 'probe_sklearn.joblib')
+            try:
+                joblib.dump(self.sklearn_model, save_path)
+                logging.debug(f'sklearn model saved to {save_path}')
+            except Exception as e:
+                logging.error(f'Failed to save sklearn model: {e}')
+        else:
+            save_path = os.path.join(save_dir, 'probe.pth')
+            try:
+                torch.save(self.model.state_dict(), save_path)
+                logging.debug(f'Model saved to {save_path}')
+            except Exception as e:
+                logging.error(f'Failed to save probe model: {e}')
 
         if metadata:
+            # Add model type to metadata
+            metadata['model_type'] = 'sklearn' if self.use_sklearn else 'torch'
             try:
                 data_path = os.path.join(save_dir, 'probe_data.json')
                 with open(data_path, 'w') as f:
