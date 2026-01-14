@@ -1,0 +1,14 @@
+architecture: molmo
+model_path: allenai/Molmo-7B-O-0924
+model:
+  - torch_dtype: auto
+  - checkpoint: /data/shared/Qwen/molmo/outputs/single_Spatial457_23k/unshared/
+forward:
+  - max_new_tokens: 1
+  - stop_strings: <|endoftext|>
+dataset:
+  - local_dataset_path: /data/shared/Qwen/vlm-lens-mod/data/robospatial/configuration
+output_db: output/Molmo-7B-O-0924-Spatial457.db
+pooling_method: mean
+modules:
+  - model.transformer.blocks.*.ff_norm

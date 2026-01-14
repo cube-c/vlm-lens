@@ -162,25 +162,32 @@ class Probe(nn.Module):
         """Builds the probe model from scratch."""
         # Intialize probe model
         layers = list()
-        layers.append(
-            nn.Linear(self.config.model['input_size'],
-                      self.config.model['hidden_size'])
-        )
-        layers.append(getattr(nn, self.config.model['activation'])())
-
-        # Intialize intermediate layers based on config
-        for _ in range(self.config.model['num_layers'] - 2):
+        if self.config.model['num_layers'] < 2:
             layers.append(
-                nn.Linear(self.config.model['hidden_size'],
-                          self.config.model['hidden_size'])
+                nn.Linear(self.config.model['input_size'],
+                        self.config.model['output_size'])
+            )
+
+        else:
+            layers.append(
+                nn.Linear(self.config.model['input_size'],
+                        self.config.model['hidden_size'])
             )
             layers.append(getattr(nn, self.config.model['activation'])())
 
-        # Final layer to output the desired size
-        layers.append(
-            nn.Linear(self.config.model['hidden_size'],
-                      self.config.model['output_size'])
-        )
+            # Intialize intermediate layers based on config
+            for _ in range(self.config.model['num_layers'] - 2):
+                layers.append(
+                    nn.Linear(self.config.model['hidden_size'],
+                            self.config.model['hidden_size'])
+                )
+                layers.append(getattr(nn, self.config.model['activation'])())
+
+            # Final layer to output the desired size
+            layers.append(
+                nn.Linear(self.config.model['hidden_size'],
+                        self.config.model['output_size'])
+            )
 
         # Combine all layers to construct the model
         self.model = nn.Sequential(*layers)
