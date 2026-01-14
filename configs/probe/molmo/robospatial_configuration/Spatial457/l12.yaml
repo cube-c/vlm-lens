@@ -3,14 +3,12 @@ model:
   - save_dir: output/robospatial_configuration/probe/Spatial457/l12
 
 training:
-  - batch_size: [256]
-  - num_epochs: [100]
-  - learning_rate: [0.01]
-  - optimizer: AdamW
+  - sklearn_C: 100.0
+  - sklearn_solver: lbfgs
+  - sklearn_max_iter: 1000
   - loss: CrossEntropyLoss
 
 test:
-  - batch_size: 256
   - loss: CrossEntropyLoss
 
 data:

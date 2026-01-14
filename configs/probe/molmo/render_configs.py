@@ -4,7 +4,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 DATASETS = [
-    "robospatial_compatibility",
+    # "robospatial_compatibility",
     "robospatial_configuration",
 ]
 
