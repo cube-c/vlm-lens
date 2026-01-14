@@ -1,0 +1,19 @@
+model:
+  - num_layers: 1
+  - save_dir: output/{{ dataset }}/probe/{{ db_variant }}/l{{ layer_idx }}
+
+training:
+  - batch_size: [256]
+  - num_epochs: [100]
+  - learning_rate: [0.01]
+  - optimizer: AdamW
+  - loss: CrossEntropyLoss
+
+test:
+  - batch_size: 256
+  - loss: CrossEntropyLoss
+
+data:
+  - input_db: output/{{ dataset }}/Molmo-7B-O-0924-{{ db_variant }}.db
+  - db_name: tensors
+  - input_layer: model.transformer.blocks.{{ layer_idx }}.ff_norm

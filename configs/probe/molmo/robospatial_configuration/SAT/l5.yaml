@@ -1,0 +1,19 @@
+model:
+  - num_layers: 1
+  - save_dir: output/robospatial_configuration/probe/SAT/l5
+
+training:
+  - batch_size: [256]
+  - num_epochs: [100]
+  - learning_rate: [0.01]
+  - optimizer: AdamW
+  - loss: CrossEntropyLoss
+
+test:
+  - batch_size: 256
+  - loss: CrossEntropyLoss
+
+data:
+  - input_db: output/robospatial_configuration/Molmo-7B-O-0924-SAT.db
+  - db_name: tensors
+  - input_layer: model.transformer.blocks.5.ff_norm
