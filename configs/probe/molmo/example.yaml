@@ -1,6 +1,6 @@
 model:
   - num_layers: 1
-  - save_dir: output/molmo_robospatial_boolean_probe_l17
+  - save_dir: output/molmo_mixed80k_boolean_probe_l17
 training:
   - batch_size: [256]
   - num_epochs: [100]
@@ -11,6 +11,6 @@ test:
   - batch_size: 256
   - loss: CrossEntropyLoss
 data:
-  - input_db: output/Molmo-7B-O-0924-RoboSpatial.db
+  - input_db: output/Molmo-7B-O-0924-Mixed80k.db
   - db_name: tensors
   - input_layer: model.transformer.blocks.17.ff_norm

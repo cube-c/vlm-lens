@@ -1,0 +1,54 @@
+{
+  "builder_name": "json",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "json",
+  "dataset_size": 24045029,
+  "description": "",
+  "download_checksums": {
+    "/data/shared/Qwen/vlm-lens-mod/robospatial/robospatial_compatibility.json": {
+      "num_bytes": 33145031,
+      "checksum": null
+    }
+  },
+  "download_size": 33145031,
+  "features": {
+    "image": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "prompt": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "label": {
+      "dtype": "bool",
+      "_type": "Value"
+    },
+    "qa_type": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "id": {
+      "dtype": "int64",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 57190060,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 24045029,
+      "num_examples": 100000,
+      "dataset_name": "json"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
