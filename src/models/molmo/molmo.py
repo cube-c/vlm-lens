@@ -108,8 +108,13 @@ class MolmoModel(ModelBase):
 
         # prepare the data inputs according to
         # https://huggingface.co/allenai/Molmo-7B-D-0924
+        if isinstance(img_path, Image.Image):
+            image = img_path
+        else:
+            image = Image.open(img_path)
+
         data_inputs = self.processor.process(
-            images=[Image.open(img_path)],
+            images=[image],
             text=prompt
         )
 

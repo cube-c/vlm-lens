@@ -1,0 +1,17 @@
+model:
+  - num_layers: 1
+  - save_dir: output/robospatial_compatibility/probe/SAT/l23
+
+training:
+  - sklearn_C: 100.0
+  - sklearn_solver: lbfgs
+  - sklearn_max_iter: 1000
+  - loss: CrossEntropyLoss
+
+test:
+  - loss: CrossEntropyLoss
+
+data:
+  - input_db: output/robospatial_compatibility/Molmo-7B-O-0924-SAT.db
+  - db_name: tensors
+  - input_layer: model.transformer.blocks.23.ff_norm

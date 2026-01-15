@@ -4,8 +4,9 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 DATASETS = [
+    "clevr",
     # "robospatial_compatibility",
-    "robospatial_configuration",
+    # "robospatial_configuration",
 ]
 
 DB_VARIANTS = [

@@ -5,10 +5,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 CUDA_DEVICE="${CUDA_VISIBLE_DEVICES:-0}"
+SUBFOLDER="${1:-}"  # Optional: specify a subfolder to run configs from
 
 cd "$PROJECT_ROOT"
 
-configs=("$SCRIPT_DIR"/*/*/*.yaml)
+if [[ -n "$SUBFOLDER" ]]; then
+  # Use find for recursive search in specified subfolder
+  mapfile -t configs < <(find "$SCRIPT_DIR/$SUBFOLDER" -name "*.yaml" -type f | sort)
+else
+  configs=("$SCRIPT_DIR"/*/*/*.yaml)
+fi
 
 echo "=== Found ${#configs[@]} configs to run ==="
 for c in "${configs[@]}"; do
